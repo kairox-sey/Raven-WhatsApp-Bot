@@ -1,0 +1,15 @@
+{
+  "name": "raven-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^latest",
+    "pino": "^latest",
+    "qrcode-terminal": "^latest",
+    "fs": "^0.0.1-security",
+    "axios": "^latest"
+  }
+}

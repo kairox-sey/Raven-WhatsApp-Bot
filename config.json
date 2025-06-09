@@ -1,0 +1,8 @@
+{
+    "botName": "Reven",
+    "reactionEmoji": "❤️",
+    "mediaSavePath": "./media/",
+    "maxRetries": 3,
+    "logLevel": "info",
+    "privacyMode": false
+}
