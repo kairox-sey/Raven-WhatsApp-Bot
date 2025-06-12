@@ -22,7 +22,7 @@
 > **Bot Name**: Raven  
 > **Purpose**: A multi-functional WhatsApp bot for entertainment, information & group admin  
 > **Features**: Quotes, memes, polls, weather, tools & more  
-> **GitHub**: [github.com/kairox-sey]([https://github.com/kairox-sey/Raven-WhatsApp-Bot])
+> **GitHub**: [github.com/kairox-sey](https://github.com/kairox-sey/Raven-WhatsApp-Bot)
 
 ---
 
