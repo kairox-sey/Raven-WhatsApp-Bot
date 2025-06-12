@@ -1,94 +1,137 @@
-Raven WhatsApp Bot
-Welcome to Raven, a versatile WhatsApp bot built with Node.js and the Baileys library. Created by Sey from Kairox, this bot offers a range of commands for fun, utility, and group management, with a stylish and interactive interface.
-Overview
+<h1 align="center">🦉 Raven WhatsApp Bot</h1>
 
-Bot Name: Raven
-Purpose: A multi-functional WhatsApp bot for entertainment, information, and group administration.
-Features: Quotes, memes, polls, weather updates, group tools, and more.
-GitHub: https://github.com/kairox-sey
+<p align="center">
+  <img src="https://media.giphy.com/media/QBd2kLB5qDmysEXre9/giphy.gif" width="200"/>
+</p>
 
-Prerequisites
+<p align="center">
+  <strong>A versatile, modular WhatsApp bot powered by Node.js + Baileys</strong><br/>
+  Created by <a href="https://github.com/kairox-sey">Sey</a> from Kairox 💡
+</p>
 
-Node.js (v14.x or higher)
-npm (Node Package Manager)
-A WhatsApp account for authentication
+<p align="center">
+  <a href="https://github.com/kairox-sey/Raven-WhatsApp-Bot"><img alt="Repo Stars" src="https://img.shields.io/github/stars/kairox-sey/Raven-WhatsApp-Bot?style=for-the-badge"/></a>
+  <a href="https://github.com/kairox-sey"><img alt="Author" src="https://img.shields.io/badge/Author-Kairox_Sey-blueviolet?style=for-the-badge"/></a>
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge"/>
+</p>
 
-Setup Instructions
+---
 
-Clone the Repository:
+## 📜 Overview
+
+> **Bot Name**: Raven  
+> **Purpose**: A multi-functional WhatsApp bot for entertainment, information & group admin  
+> **Features**: Quotes, memes, polls, weather, tools & more  
+> **GitHub**: [github.com/kairox-sey](https://github.com/kairox-sey)
+
+---
+
+## 🚀 Features
+
+- 🧠 Intelligent group commands
+- 🎭 Fun: memes, quotes, jokes
+- ☁️ Live weather updates
+- ⚙️ Auto-view status toggle
+- 🔒 Private mode (owner only)
+- 🔧 Admin & permission system
+- 🌐 Deployable on any platform
+- 🧩 Extensible & modular structure
+
+---
+
+<details>
+<summary>🧰 <strong>Setup Instructions</strong></summary>
+
+### 🔧 Prerequisites
+
+- Node.js v14.x or higher  
+- npm installed  
+- A WhatsApp number (to log in)
+
+### 📦 Clone & Install
+
+```bash
 git clone https://github.com/kairox-sey/Raven-WhatsApp-Bot.git
 cd Raven-WhatsApp-Bot
-
-
-Install Dependencies:
 npm install
+⚙️ Configure the Bot
+Set your ownerJid in index.js
+Example: 233538911895@s.whatsapp.net
 
+Optionally, add welcome_image.jpg for welcome messages.
 
-Configure the Bot:
-
-Ensure index.js is present with the correct ownerJid (e.g., 233538911895@s.whatsapp.net).
-Create a welcome_image.jpg in the root directory for the welcome message (optional).
-
-
-Run Locally:
+🟢 Run the Bot
+bash
+Copy
+Edit
 node index.js
+Scan the QR code shown in terminal with your WhatsApp.
 
+</details>
+<details> <summary>🌍 <strong>Deployment Guides</strong></summary>
+☁️ Heroku
+bash
+Copy
+Edit
+heroku login
+heroku create raven-bot
+git push heroku main
+Add a Procfile: worker: node index.js
 
-Scan the QR code displayed in the terminal with your WhatsApp to authenticate.
+Enable worker dyno in dashboard.
 
+🖥️ Render
+Connect repo, set:
 
+Build command: npm install
 
-Deployment
-Raven can be deployed on various platforms. Below are quick guides:
-Heroku
+Start command: node index.js
 
-Install Heroku CLI.
-Create an app: heroku create raven-bot.
-Push code: git push heroku main.
-Set Procfile with worker: node index.js.
-Enable worker dyno in the Heroku Dashboard.
+⚡ Koyeb
+Deploy GitHub repo
 
-Render
+Build: npm install, Run: node index.js
 
-Sign up at Render.
-Connect GitHub repo, set build command to npm install, and start command to node index.js.
-Deploy and authenticate via QR code.
+Authenticate using QR in logs
 
-Koyeb
+📡 bot-hosting.com
+Upload ZIP (with index.js, package.json, Procfile)
 
-Sign up at Koyeb.
-Deploy from GitHub, use npm install as build command and node index.js as run command.
-Monitor logs for QR code.
+Start command: node index.js
 
-bot-hosting.com
+</details>
+📖 Usage
+Prefix: . (dot)
 
-Sign up at bot-hosting.com.
-Upload a ZIP with index.js, package.json, and Procfile.
-Set start command to node index.js and deploy.
+🔹 Sample Commands
+Command	Description
+.menu	View all commands
+.help	Usage guide
+.quote	Get a random quote
+.meme	Fetch a fresh meme
+.weather <city>	Check live weather
+.groupinfo	View group info
 
-Usage
+🔐 Settings
+Command	Description
+.autoviewon/off	Auto-view WhatsApp statuses
+.privacy private	Restrict bot to owner only
+.privacy public	Allow group use
 
-Prefix: Use . before commands (e.g., .menu).
-Commands:
-.menu: Display the command galaxy.
-.help: Get usage tips.
-.quote: Receive a random quote.
-.meme: Fetch a meme.
-.weather <city>: Check weather.
-.groupinfo: View group details.
-And more—see .menu for the full list!
+🤝 Contributing
+Pull requests are welcome!
+Feel free to fork, suggest features, or report bugs.
+Let’s build the most 🔥 WhatsApp bot together.
 
+📄 License
+This project is open-source under the MIT License.
+See LICENSE for more details.
 
-Settings:
-.autoviewon/off: Toggle auto-view of statuses.
-.privacy [private/public]: Restrict commands to owner.
+📬 Support
+For help or contributions:
 
+Contact Sey via GitHub
 
+Community/Support group coming soon!
 
-Contributing
-Feel free to fork this repo, make improvements, and submit pull requests. Issues and suggestions are welcome!
-License
-This project is open-source. See LICENSE (if added) for details.
-Support
-For help, contact Sey via the GitHub profile or join the community (TBD).
-Last updated: June 09, 2025
+<p align="center"> <img src="https://media.giphy.com/media/fdLRfjKdJtL5XzfnDZ/giphy.gif" width="100"/> </p> <p align="center"><strong>Last updated: June 09, 2025</strong></p> ```
