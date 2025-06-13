@@ -1,8 +1,6 @@
 {
-    "botName": "Reven",
-    "reactionEmoji": "❤️",
-    "mediaSavePath": "./media/",
-    "maxRetries": 3,
-    "logLevel": "info",
-    "privacyMode": false
+  "botName": "Raven",
+  "companyName": "Kairox",
+  "commandPrefix": ".",
+  "ownerJid": "233538911895@s.whatsapp.net"
 }
