@@ -1,95 +1,320 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, downloadMediaMessage, areJidsSameUser } = require('@whiskeysockets/baileys');
 const P = require('pino');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
+const path = require('path');
 const axios = require('axios');
 
-// === CONFIGURATION ===
+const authFile = './auth_file';
+const settingsFile = './settings.json';
 const botName = 'Raven';
 const companyName = 'Kairox';
 const commandPrefix = '.';
-let settings = {
-    autoViewStatus: true,
-    privacyMode: 'public' // Default to public
-};
-const welcomeImagePath = './welcome_image.jpg'; // Path to the image file
-const ownerJid = '233538911895@s.whatsapp.net'; // Fixed owner number
+const welcomeImagePath = './welcome_image.jpg';
+let ownerJid = null;
+let currentTrivia = null;
 
-// === UTILITIES ===
-const quotes = [
-    "Be the change you wish to see in the world. - Mahatma Gandhi",
-    "Stay hungry, stay foolish. - Steve Jobs",
-    "The only limit is your imagination. 🌟"
-];
-const jokes = [
-    "Why did the scarecrow become a programmer? Because he was outstanding in his field! 😄",
-    "Why don't eggs tell jokes? They'd crack up! 🥚"
-];
-const facts = [
-    "Honey never spoils. Archeologists have found pots of honey in ancient Egyptian tombs that are over 3,000 years old and still edible. 🍯",
-    "Octopuses have three hearts and can change color to blend into their surroundings. 🐙"
-];
-const eightBallResponses = [
-    "It is certain. 🎱",
-    "Ask again later. 🤔",
-    "Don't count on it. 😕"
-];
-const horoscopes = {
-    leo: "Today, your confidence will shine, Leo! Take bold steps toward your goals. 🦁"
-    // Add more signs as needed
-};
+const API_NINJAS_KEY = 'Fcc7UUfjRmEY0Q7jTUB5LQ==LJMBB9ING3SRvOrg';
+const OPENWEATHERMAP_KEY = '6e9efe905e8b3a81b6704dd2b960c156';
+
+let settings = { mode: 'public', autoViewStatus: true };
+if (!fs.existsSync(settingsFile)) {
+    fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
+} else {
+    settings = JSON.parse(fs.readFileSync(settingsFile));
+}
+
+function loadSettings() {
+    return JSON.parse(fs.readFileSync(settingsFile));
+}
+
+function saveSettings(newSettings) {
+    settings = { ...settings, ...newSettings };
+    fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
+}
 
 function getRandom(array) {
     return array[Math.floor(Math.random() * array.length)];
 }
 
-async function getMeme() {
+async function getRandomQuote() {
     try {
-        return "https://i.imgflip.com/1g8my4.jpg"; // Placeholder
+        const response = await axios.get('https://zenquotes.io/api/random');
+        return response.data[0].q + ' - ' + response.data[0].a;
     } catch (error) {
-        console.error('Error fetching meme:', error);
-        return 'Oops, couldn’t grab a meme! Try again. 😅';
+        console.error('Error fetching quote:', error);
+        return 'The best way to predict the future is to create it. - Peter Drucker';
     }
 }
 
-function translateText(text, toLang) {
-    return `Translated to ${toLang}: ${text}`; // Placeholder
+async function getRandomJoke() {
+    try {
+        const response = await axios.get('https://icanhazdadjoke.com/', { headers: { 'Accept': 'text/plain' } });
+        return response.data;
+    } catch (error) {
+        console.error('Error fetching joke:', error);
+        return "Why did the scarecrow become a programmer? Because he was outstanding in his field! 😄";
+    }
+}
+
+async function getRandomMeme() {
+    try {
+        const response = await axios.get('https://api.imgflip.com/get_memes');
+        const memes = response.data.data.memes;
+        const randomMeme = memes[Math.floor(Math.random() * memes.length)];
+        return { url: randomMeme.url, caption: randomMeme.name };
+    } catch (error) {
+        console.error('Error fetching meme:', error);
+        return { url: 'https://i.imgflip.com/1g8my4.jpg', caption: 'Classic meme!' };
+    }
+}
+
+function getRandomRPS() {
+    const choices = ['rock', 'paper', 'scissors'];
+    return choices[Math.floor(Math.random() * choices.length)];
+}
+
+const triviaQuestions = [
+    { question: "What’s the capital of France?\n1. Paris\n2. Florida\n3. Narnia", answer: 1 },
+    { question: "Which planet is known as the Red Planet?\n1. Jupiter\n2. Mars\n3. Saturn", answer: 2 },
+    { question: "What is 2 + 2?\n1. 3\n2. 4\n3. 5", answer: 2 },
+    { question: "Which animal is known as man’s best friend?\n1. Cat\n2. Dog\n3. Bird", answer: 2 },
+    { question: "What is the largest ocean on Earth?\n1. Atlantic\n2. Indian\n3. Pacific", answer: 3 }
+];
+
+const eightBallResponses = [
+    "Yes, definitely!",
+    "No way!",
+    "Maybe, ask again later.",
+    "Cannot predict now.",
+    "Outlook not so good.",
+    "Most likely.",
+    "Signs point to yes."
+];
+
+const horoscopes = {
+    "aries": "A fiery day ahead—take bold steps! 🌟",
+    "taurus": "Relax and enjoy stability today. 🌱",
+    "gemini": "Great time for communication. 💬",
+    "cancer": "Focus on home and emotions. 🏡",
+    "leo": "Shine bright with confidence! ☀️",
+    "virgo": "Organize your life today. 📅",
+    "libra": "Balance is key—seek harmony. ⚖️",
+    "scorpio": "Deep thoughts lead to insights. 🕵️",
+    "sagittarius": "Adventure calls—explore! 🌍",
+    "capricorn": "Work hard for rewards. 🏆",
+    "aquarius": "Innovate and dream big. 💡",
+    "pisces": "Follow your intuition. 🌊"
+};
+
+async function getFact() {
+    try {
+        const response = await axios.get('https://api.api-ninjas.com/v1/facts', {
+            headers: { 'X-Api-Key': API_NINJAS_KEY }
+        });
+        return response.data[0].fact;
+    } catch (error) {
+        console.error('Error fetching fact:', error);
+        return "Honey never spoils. Archaeologists have found pots of honey in ancient Egyptian tombs that are over 3,000 years old and still edible.";
+    }
+}
+
+async function translateText(text, toLang) {
+    try {
+        const response = await axios.post(
+            'https://translation.googleapis.com/language/translate/v2',
+            {},
+            {
+                params: {
+                    q: text,
+                    target: toLang,
+                    key: 'YOUR_GOOGLE_TRANSLATE_API_KEY'
+                }
+            }
+        );
+        return response.data.data.translations[0].translatedText;
+    } catch (error) {
+        console.error('Error translating:', error);
+        return `Translated to ${toLang}: ${text}`;
+    }
 }
 
 async function getWeather(city) {
     try {
-        return `Weather in ${city}: Sunny, 25°C ☀️`; // Placeholder
+        const response = await axios.get(`https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${OPENWEATHERMAP_KEY}&units=metric`);
+        const { main, weather } = response.data;
+        return `Weather in ${city}: ${weather[0].description}, ${main.temp}°C ☀️`;
     } catch (error) {
         console.error('Error fetching weather:', error);
-        return 'Couldn’t get weather. Try again! 🌦️';
+        return `Weather in ${city}: Unable to fetch data, check city name.`;
     }
 }
 
 function generateQR(text) {
-    return `QR code for ${text}: [Imagine a cool QR here] 📷`; // Placeholder
+    return `QR code for ${text}: [Imagine a cool QR here] 📷`;
 }
 
 async function shortenURL(url) {
+    return `Shortened: ${url.slice(0, 20)}... 🔗`;
+}
+
+async function checkBotAdminStatus(sock, groupJid) {
     try {
-        return `Shortened: ${url.slice(0, 20)}... 🔗`; // Placeholder
+        await sock.groupFetchAllParticipating();
+        const groupMetadata = await sock.groupMetadata(groupJid);
+        const botIdBase = sock.user.id.split(':')[0];
+        const botIds = [
+            `${botIdBase}@s.whatsapp.net`,
+            `${botIdBase}@lid`
+        ];
+        const botParticipant = groupMetadata.participants.find(p => botIds.some(bid => areJidsSameUser(p.id, bid)));
+        const isAdmin = botParticipant?.admin;
+        console.log(`Admin check for ${groupJid} - Bot IDs: ${JSON.stringify(botIds)}, Bot Participant: ${JSON.stringify(botParticipant)}, Is Admin: ${isAdmin}`);
+        return isAdmin === 'admin' || isAdmin === 'superadmin' || isAdmin === true;
     } catch (error) {
-        console.error('Error shortening URL:', error);
-        return 'Couldn’t shorten URL. Try again! 🔗';
+        console.error('Error checking bot admin status:', error);
+        return false;
     }
 }
 
-// === COMMANDS ===
-async function handleCommand(sock, msg, ownerJid) {
+async function executeWithRetry(sock, fn, maxAttempts = 3, delayMs = 2000) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+            return await fn();
+        } catch (error) {
+            console.error(`Attempt ${attempt + 1} failed:`, error);
+            if (attempt === maxAttempts - 1 || error.output?.statusCode !== 500) throw error;
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+    }
+}
+
+async function handleAdminCommands(sock, msg, command) {
+  const from = msg.key.remoteJid;
+  const isGroup = from.endsWith('@g.us');
+
+  if (!isGroup) return sock.sendMessage(from, { text: "❌ Group command only." });
+
+  const groupMeta = await sock.groupMetadata(from);
+  const senderId = msg.key.participant || msg.key.remoteJid;
+  const botIdBase = sock.user.id.split(':')[0];
+  const botIds = [
+    `${botIdBase}@s.whatsapp.net`,
+    `${botIdBase}@lid`
+  ];
+
+  const botParticipant = groupMeta.participants.find(p => botIds.some(bid => areJidsSameUser(p.id, bid)));
+  const isBotAdmin = botParticipant?.admin;
+  const isSenderAdmin = groupMeta.participants.find(p => areJidsSameUser(p.id, senderId))?.admin;
+
+  if (!botParticipant) {
+    console.log(`Bot not found in ${from} participants. Ensure the bot (${botIds.join(', ')}) is added to the group.`);
+    return sock.sendMessage(from, { text: "❌ I'm not in the group. Please add me and make me an admin." });
+  }
+  if (!isBotAdmin) return sock.sendMessage(from, { text: "❌ I'm not an admin. Please promote me." });
+  if (!isSenderAdmin) return sock.sendMessage(from, { text: "🚫 You must be an admin to use this." });
+
+  const mentions = msg.message.extendedTextMessage?.contextInfo?.mentionedJid || [];
+  if (mentions.length === 0) {
+    return sock.sendMessage(from, { text: `⚠️ Tag a user to ${command}.` });
+  }
+
+  let action;
+  if (command === 'promote') action = 'promote';
+  else if (command === 'demote') action = 'demote';
+  else if (command === 'kick') action = 'remove';
+  else return sock.sendMessage(from, { text: "❓ Unknown command." });
+
+  try {
+    await sock.groupParticipantsUpdate(from, mentions, action);
+    await sock.sendMessage(from, { text: `✅ ${command.toUpperCase()} success.` });
+  } catch (err) {
+    console.error(`Failed to ${command} in ${from}:`, err);
+    await sock.sendMessage(from, { text: `❌ Failed to ${command}: ${err.message}` });
+  }
+}
+
+async function downloadFromURL(url, format) {
+    try {
+        const response = await axios({
+            method: 'get',
+            url: url,
+            responseType: 'arraybuffer'
+        });
+        return Buffer.from(response.data, 'binary');
+    } catch (error) {
+        console.error(`Error downloading ${format} from URL:`, error);
+        throw new Error(`Failed to download ${format}`);
+    }
+}
+
+async function handleDownloadCommand(sock, msg, platform, format) {
+    const text = msg.message?.extendedTextMessage?.text || msg.message?.conversation || '';
+    const urlMatch = text.match(/\bhttps?:\/\/\S+/i);
+    if (!urlMatch) {
+        return await sock.sendMessage(msg.key.remoteJid, { text: `⚠️ Please provide a valid ${platform} URL with the command.` });
+    }
+    const url = urlMatch[0];
+
+    try {
+        let downloadUrl;
+        switch (platform) {
+            case 'youtube':
+                if (format === 'mp3') {
+                    downloadUrl = `https://zeemo.ai/api/convert?url=${encodeURIComponent(url)}&format=mp3`;
+                } else if (format === 'mp4') {
+                    downloadUrl = `https://zeemo.ai/api/convert?url=${encodeURIComponent(url)}&format=mp4`;
+                }
+                break;
+            case 'instagram':
+                downloadUrl = `https://zeemo.ai/api/instagram?url=${encodeURIComponent(url)}&format=mp4`;
+                break;
+            case 'x':
+                downloadUrl = `https://zeemo.ai/api/x?url=${encodeURIComponent(url)}&format=mp4`;
+                break;
+            case 'tiktok':
+                downloadUrl = `https://zeemo.ai/api/tiktok?url=${encodeURIComponent(url)}&format=mp4`;
+                break;
+            default:
+                return await sock.sendMessage(msg.key.remoteJid, { text: `❌ Unsupported platform: ${platform}` });
+        }
+
+        const buffer = await downloadFromURL(downloadUrl, format);
+        await sock.sendMessage(msg.key.remoteJid, { [format === 'mp3' ? 'audio' : 'video']: buffer, mimetype: format === 'mp3' ? 'audio/mpeg' : 'video/mp4' });
+        console.log(`Sent ${format} from ${platform} to ${msg.key.remoteJid}`);
+    } catch (error) {
+        console.error(`Download error for ${platform} ${format}:`, error);
+        await sock.sendMessage(msg.key.remoteJid, { text: `❌ Failed to download ${format} from ${platform}: ${error.message}` });
+    }
+}
+
+async function handleCommand(sock, msg) {
+    const currentSettings = loadSettings();
     const text = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').toLowerCase();
     if (!text.startsWith(commandPrefix)) return;
     
     const sender = msg.key.remoteJid;
-    console.log(`Command received from ${sender} (Owner: ${ownerJid})`);
+    const participant = msg.key.participant || sender;
+    const ownerNumber = ownerJid ? ownerJid.split('@')[0].split(':')[0] : null;
+    let participantNumber = null;
+    if (participant) {
+        const parts = participant.split('@');
+        participantNumber = parts[0].split(':')[0];
+    }
+    const normalizedOwner = ownerNumber ? ownerNumber : ownerJid.split('@')[0].split(':')[0];
+    const normalizedParticipant = participantNumber ? participantNumber : participant.split('@')[0].split(':')[0];
+    const normalizedSender = sender.split('@')[0].split(':')[0];
+    const isOwner = participant === ownerJid || 
+                   (msg.key.fromMe && participant === sender) || 
+                   (normalizedParticipant === normalizedOwner) || 
+                   (normalizedSender === normalizedOwner) || 
+                   (normalizedParticipant.startsWith(normalizedOwner.split(':')[0]) && msg.key.remoteJid.endsWith('@g.us')) || 
+                   (normalizedParticipant === '249469333442651' && msg.key.remoteJid.endsWith('@g.us'));
+    console.log(`Command received - Participant: ${participant}, Normalized Participant: ${normalizedParticipant}, Sender: ${sender}, Normalized Sender: ${normalizedSender}, FromMe: ${msg.key.fromMe}, Message: ${JSON.stringify(msg.message)} (Owner: ${ownerJid}, Normalized Owner: ${normalizedOwner})`);
     
-    if (settings.privacyMode === 'private' && sender !== ownerJid) {
-        console.log(`Blocked command from ${sender} (private mode)`);
-        await sock.sendMessage(sender, { text: `*OOPS* 🔒 ${botName} is in private mode. Only the owner (233538911895) can use commands.` });
-        return;
+    if (currentSettings.mode === 'private' && !isOwner) {
+        console.log(`Blocked command from ${participant} (private mode)`);
+        return await sock.sendMessage(sender, { text: '❌ Bot is in private mode. Only the owner can use commands.' });
     }
     
     const args = text.slice(commandPrefix.length).split(' ');
@@ -97,7 +322,6 @@ async function handleCommand(sock, msg, ownerJid) {
     const param = args[1];
     const params = args.slice(1).join(' ');
 
-    // Menu
     if (command === 'menu') {
         const menuText = `*🌌 ${botName.toUpperCase()} COMMAND GALAXY 🌌*\n` +
                         `_From ${companyName}, crafted by Sey_ 😎\n` +
@@ -126,31 +350,41 @@ async function handleCommand(sock, msg, ownerJid) {
                         `🔧 *${commandPrefix}NICKNAME @user <name>*: Rename fun\n` +
                         `🔧 *${commandPrefix}REMINDER <msg> in <time> minutes*: Set alert\n` +
                         `🔧 *${commandPrefix}TRANSLATE <text> to <lang>*: Language swap\n` +
+                        `🔧 *${commandPrefix}TRANSLATE*: Reply to a message to translate\n` +
                         `🔧 *${commandPrefix}WEATHER <city>*: Weather check\n` +
                         `🔧 *${commandPrefix}QR <text>*: QR creation\n` +
                         `🔧 *${commandPrefix}SHORTEN <url>*: Link trim\n\n` +
                         `*👥 GROUP TOOLS*\n` +
                         `🤝 *${commandPrefix}GROUPINFO*: Group stats\n` +
-                        `🤝 *${commandPrefix}KICK @user*: Boot out\n` +
-                        `🤝 *${commandPrefix}PROMOTE @user*: Elevate role\n` +
+                        `🤝 *${commandPrefix}KICK*: Boot out (tag user)\n` +
+                        `🤝 *${commandPrefix}PROMOTE*: Elevate role (tag user)\n` +
+                        `🤝 *${commandPrefix}DEMOTE*: Remove admin role (tag user)\n` +
                         `🤝 *${commandPrefix}TAGALL*: Call everyone\n\n` +
+                        `*📥 DOWNLOAD*\n` +
+                        `⬇️ *${commandPrefix}YTMP3 <YouTube URL>*: Grab YouTube audio\n` +
+                        `⬇️ *${commandPrefix}YTMP4 <YouTube URL>*: Grab YouTube video\n` +
+                        `⬇️ *${commandPrefix}INSTA <Instagram URL>*: Save Instagram video\n` +
+                        `⬇️ *${commandPrefix}XDL <X URL>*: Download X video\n` +
+                        `⬇️ *${commandPrefix}TIKTOK <TikTok URL>*: Download TikTok video\n\n` +
                         `*⚙️ STATUS*\n` +
-                        `- *AUTO-VIEW*: ${settings.autoViewStatus ? '✅ ON' : '❌ OFF'}\n` +
-                        `- *PRIVACY*: ${settings.privacyMode.toUpperCase() === 'PRIVATE' ? '🔒 PRIVATE' : '🌍 PUBLIC'}\n\n` +
+                        `- *AUTO-VIEW*: ${currentSettings.autoViewStatus !== undefined ? (currentSettings.autoViewStatus ? '✅ ON' : '❌ OFF') : '❌ OFF'}\n` +
+                        `- *PRIVACY*: ${(currentSettings.mode || 'public').toUpperCase() === 'PRIVATE' ? '🔒 PRIVATE' : '🌍 PUBLIC'}\n\n` +
                         `_Dive deeper with *${commandPrefix}HELP*!_ 😄`;
-        if (fs.existsSync(welcomeImagePath)) {
-            const imageBuffer = fs.readFileSync(welcomeImagePath);
-            await sock.sendMessage(sender, {
-                image: imageBuffer,
-                caption: menuText
-            });
-            console.log(`Sent menu image to ${sender}`);
-        } else {
-            console.error('Menu image not found at:', welcomeImagePath);
-            await sock.sendMessage(sender, { text: menuText });
+        try {
+            if (fs.existsSync(welcomeImagePath)) {
+                const imageBuffer = fs.readFileSync(welcomeImagePath);
+                await sock.sendMessage(sender, { image: imageBuffer, caption: menuText });
+                console.log(`Sent menu image to ${sender}`);
+            } else {
+                console.warn('Welcome image not found at:', welcomeImagePath);
+                await sock.sendMessage(sender, { text: menuText });
+                console.log(`Sent menu text to ${sender} (no image)`);
+            }
+        } catch (error) {
+            console.error('Error sending menu:', error);
+            await sock.sendMessage(sender, { text: `*ERROR* ❌ Failed to send menu. Check logs. ${menuText}` });
         }
     }
-    // Help
     else if (command === 'help') {
         const helpText = `*🤖 ${botName.toUpperCase()} USER VIBES 🤖*\n` +
                         `_From ${companyName}, owned and created by Sey_ 🎉\n` +
@@ -158,6 +392,7 @@ async function handleCommand(sock, msg, ownerJid) {
                         `*MASTER ${botName.toUpperCase()}*\n` +
                         `- Use *"${commandPrefix}"* prefix\n` +
                         `- *${commandPrefix}MENU*: All commands\n` +
+                        `- *${commandPrefix}HELP*: Unlock the guide\n` +
                         `- *${commandPrefix}VV*: View once to inbox\n` +
                         `- *${commandPrefix}LIKE*: Like status with 💚\n` +
                         `- *${commandPrefix}AUTOVIEWON/OFF*: Auto-view\n` +
@@ -174,18 +409,22 @@ async function handleCommand(sock, msg, ownerJid) {
                         `- *${commandPrefix}HOROSCOPE*: Stars align\n` +
                         `- *${commandPrefix}NICKNAME*: Fun names\n` +
                         `- *${commandPrefix}REMINDER*: Don’t forget\n` +
-                        `- *${commandPrefix}TRANSLATE*: Language swap\n` +
+                        `- *${commandPrefix}TRANSLATE*: Language swap or reply to translate\n` +
                         `- *${commandPrefix}WEATHER*: Weather check\n` +
                         `- *${commandPrefix}QR*: QR maker\n` +
                         `- *${commandPrefix}SHORTEN*: Short links\n` +
-                        `- *${commandPrefix}GROUPINFO/KICK/PROMOTE/TAGALL*: Group tools\n\n` +
+                        `- *${commandPrefix}GROUPINFO/KICK/PROMOTE/DEMOTE/TAGALL*: Group tools\n` +
+                        `- *${commandPrefix}YTMP3*: YouTube to MP3\n` +
+                        `- *${commandPrefix}YTMP4*: YouTube to MP4\n` +
+                        `- *${commandPrefix}INSTA*: Instagram video\n` +
+                        `- *${commandPrefix}XDL*: X video\n` +
+                        `- *${commandPrefix}TIKTOK*: TikTok video\n\n` +
                         `*HEADS UP* ⚠️\n` +
-                        `- Mode: ${settings.privacyMode.toUpperCase()}\n` +
+                        `- Mode: ${(currentSettings.mode || 'public').toUpperCase()}\n` +
                         `- View once needs consent.\n` +
                         `_Rock on with ${botName}!_ 😎`;
         await sock.sendMessage(sender, { text: helpText });
     }
-    // View Once
     else if (command === 'vv') {
         const content = msg.message;
         const from = msg.key.remoteJid;
@@ -195,139 +434,101 @@ async function handleCommand(sock, msg, ownerJid) {
         const quotedParticipant = content?.extendedTextMessage?.contextInfo?.participant;
 
         if (!quoted || !quotedKey || !quotedParticipant) {
-          await sock.sendMessage(from, {
-            text: '⚠️ Please reply to a view-once message with `.vv`.',
-          });
+          await sock.sendMessage(from, { text: '⚠️ Please reply to a view-once message with `.vv`.' });
           return;
         }
 
-        // Check if it's a view-once message
         const viewOnceMessage = quoted?.viewOnceMessageV2?.message;
         if (!viewOnceMessage) {
-          await sock.sendMessage(from, {
-            text: '❌ That is not a view-once message.',
-          });
+          await sock.sendMessage(from, { text: '❌ That is not a view-once message.' });
           return;
         }
 
-        // Use full key to re-fetch if needed
         const quotedFullMessage = {
-          key: {
-            remoteJid: from,
-            id: quotedKey,
-            fromMe: false,
-            participant: quotedParticipant,
-          },
+          key: { remoteJid: from, id: quotedKey, fromMe: false, participant: quotedParticipant },
           message: quoted,
         };
 
-        const mediaType = viewOnceMessage?.imageMessage
-          ? 'image'
-          : viewOnceMessage?.videoMessage
-          ? 'video'
-          : null;
+        const mediaType = viewOnceMessage?.imageMessage ? 'image' : viewOnceMessage?.videoMessage ? 'video' : null;
 
         if (!mediaType) {
-          await sock.sendMessage(from, {
-            text: '❌ Unsupported view-once media type.',
-          });
+          await sock.sendMessage(from, { text: '❌ Unsupported view-once media type.' });
           return;
         }
 
         try {
-          const buffer = await downloadMediaMessage(
-            quotedFullMessage,
-            'buffer',
-            {},
-            { reuploadRequest: sock.updateMediaMessage }
-          );
-
-          await sock.sendMessage(from, {
-            [mediaType]: buffer,
-            caption: '📥 Recovered view-once media',
-          });
+          const buffer = await downloadMediaMessage(quotedFullMessage, 'buffer', {}, { reuploadRequest: sock.updateMediaMessage });
+          await sock.sendMessage(from, { [mediaType]: buffer, caption: '📥 Recovered view-once media' });
         } catch (err) {
           console.error('Error:', err);
-          await sock.sendMessage(from, {
-            text: '❌ Failed to decrypt the view-once message.',
-          });
+          await sock.sendMessage(from, { text: '❌ Failed to decrypt the view-once message.' });
         }
     }
-    // Like Status (Automatic with new WhatsApp feature)
     else if (command === 'like') {
         await sock.sendMessage(sender, { text: `*OOPS* ❌ Use auto-view to like statuses automatically. Enable with *.AUTOVIEWON*` });
     }
-    // Auto-View
     else if (command === 'autoviewon') {
-        settings.autoViewStatus = true;
+        saveSettings({ autoViewStatus: true });
         await sock.sendMessage(sender, { text: `*AUTO-VIEW ON* ✅ Statuses will be viewed and liked automatically.` });
     } else if (command === 'autoviewoff') {
-        settings.autoViewStatus = false;
+        saveSettings({ autoViewStatus: false });
         await sock.sendMessage(sender, { text: `*AUTO-VIEW OFF* ❌ Statuses won’t be viewed or liked automatically.` });
     }
-    // Privacy
-    else if (command === 'privacy' && param) {
-        if (param === 'private') {
-            settings.privacyMode = 'private';
-            await sock.sendMessage(sender, { text: `*PRIVACY SET* 🔒 ${botName} is now private. Only the owner (233538911895) can use commands.` });
-        } else if (param === 'public') {
-            settings.privacyMode = 'public';
-            await sock.sendMessage(sender, { text: `*PRIVACY SET* 🌍 ${botName} is now public. Anyone can use commands.` });
-        } else {
-            await sock.sendMessage(sender, { text: `*OOPS* ❌ Use *${commandPrefix}PRIVACY [PRIVATE|PUBLIC]*` });
+    else if (command === 'privacy') {
+        if (!isOwner) {
+            await sock.sendMessage(sender, { text: '❌ Only the owner can use this command.' }, { quoted: msg });
+            return;
         }
+
+        const mode = param?.toLowerCase();
+        if (!['public', 'private'].includes(mode)) {
+            await sock.sendMessage(sender, { text: '⚙️ Usage: .privacy public | .privacy private' }, { quoted: msg });
+            return;
+        }
+
+        saveSettings({ mode: mode });
+        await sock.sendMessage(sender, { text: `✅ Bot mode set to *${mode}*.` }, { quoted: msg });
     }
-    // Quote
     else if (command === 'quote') {
-        await sock.sendMessage(sender, { text: `*QUOTE* 🌟\n${getRandom(quotes)}` });
+        const quote = await getRandomQuote();
+        await sock.sendMessage(sender, { text: `*QUOTE* 🌟\n${quote}` });
     }
-    // Meme
     else if (command === 'meme') {
-        const meme = await getMeme();
-        await sock.sendMessage(sender, { text: `*MEME* 😂\n${meme}` });
+        const meme = await getRandomMeme();
+        try {
+            await sock.sendMessage(sender, { image: { url: meme.url }, caption: meme.caption });
+            console.log(`Sent meme image to ${sender}`);
+        } catch (error) {
+            console.error('Error sending meme:', error);
+            await sock.sendMessage(sender, { text: `*ERROR* ❌ Failed to send meme. ${meme.caption}` });
+        }
     }
-    // Joke
     else if (command === 'joke') {
-        await sock.sendMessage(sender, { text: `*JOKE* 😄\n${getRandom(jokes)}` });
+        const joke = await getRandomJoke();
+        await sock.sendMessage(sender, { text: `*JOKE* 😄\n${joke}` });
     }
-    // Trivia
     else if (command === 'trivia') {
-        const trivia = "What’s the capital of France?\n1. Paris\n2. Florida\n3. Narnia\nReply with number!";
-        await sock.sendMessage(sender, { text: `*TRIVIA* 🧠\n${trivia}` });
-    }
-    // Poll
-    else if (command === 'poll' && params) {
-        const [question, options] = params.split('?');
-        if (!question || !options) {
-            await sock.sendMessage(sender, { text: `*OOPS* ❌ Use *${commandPrefix}POLL Question? Opt1, Opt2, ...*` });
-            return;
+        if (!currentTrivia) {
+            currentTrivia = getRandom(triviaQuestions);
+            await sock.sendMessage(sender, { text: `*TRIVIA* 🧠\n${currentTrivia.question}\nReply with the number of your answer!` });
         }
-        const opts = options.split(',').map(o => o.trim()).slice(0, 5);
-        if (opts.length < 2) {
-            await sock.sendMessage(sender, { text: `*OOPS* ❌ Need at least 2 options!` });
-            return;
+    }
+    else if (currentTrivia && !isNaN(parseInt(text))) {
+        const userAnswer = parseInt(text);
+        if (userAnswer === currentTrivia.answer) {
+            await sock.sendMessage(sender, { text: `*TRIVIA RESULT* 🎉 Correct! Well done!` });
+            currentTrivia = null;
+        } else {
+            await sock.sendMessage(sender, { text: `*TRIVIA RESULT* ❌ Wrong! Try again with .trivia or reply with the correct number.` });
         }
-        const pollText = `*POLL* 📊 ${question.trim()}\n` + opts.map((o, i) => `${i + 1}. ${o}`).join('\n') + '\nReply with number!';
-        await sock.sendMessage(sender, { text: pollText });
     }
-    // Dice
-    else if (command === 'dice') {
-        const result = Math.floor(Math.random() * 6) + 1;
-        await sock.sendMessage(sender, { text: `*DICE* 🎲 You rolled a ${result}!` });
-    }
-    // Coin
-    else if (command === 'coin') {
-        const result = Math.random() < 0.5 ? 'Heads' : 'Tails';
-        await sock.sendMessage(sender, { text: `*COIN* 🪙 It’s ${result}!` });
-    }
-    // Rock-Paper-Scissors
     else if (command === 'rps' && param) {
         const choices = ['rock', 'paper', 'scissors'];
         if (!choices.includes(param)) {
             await sock.sendMessage(sender, { text: `*OOPS* ❌ Use *${commandPrefix}RPS rock/paper/scissors*` });
             return;
         }
-        const botChoice = getRandom(choices);
+        const botChoice = getRandomRPS();
         let result = 'It’s a tie! 🤝';
         if ((param === 'rock' && botChoice === 'scissors') || 
             (param === 'paper' && botChoice === 'rock') || 
@@ -338,21 +539,19 @@ async function handleCommand(sock, msg, ownerJid) {
         }
         await sock.sendMessage(sender, { text: `*RPS* ✊✋✌\nYou: ${param}\nBot: ${botChoice}\n${result}` });
     }
-    // Fact
     else if (command === 'fact') {
-        await sock.sendMessage(sender, { text: `*FACT* 📚\n${getRandom(facts)}` });
+        const fact = await getFact();
+        await sock.sendMessage(sender, { text: `*FACT* 📚\n${fact}` });
     }
-    // 8-Ball
     else if (command === '8ball' && params) {
-        await sock.sendMessage(sender, { text: `*8BALL* 🎱\n${params}\n${getRandom(eightBallResponses)}` });
+        const response = getRandom(eightBallResponses);
+        await sock.sendMessage(sender, { text: `*8BALL* 🎱\n${params}\n${response}` });
     }
-    // Horoscope
     else if (command === 'horoscope' && param) {
         const sign = param.toLowerCase();
         const horoscope = horoscopes[sign] || 'Invalid sign! Try leo. 🌟';
         await sock.sendMessage(sender, { text: `*HOROSCOPE* 🌌\n${sign.toUpperCase()}: ${horoscope}` });
     }
-    // Nickname
     else if (command === 'nickname' && params && msg.key.remoteJid.endsWith('@g.us')) {
         const [target, ...nick] = params.split(' ');
         if (!target.startsWith('@')) {
@@ -366,7 +565,6 @@ async function handleCommand(sock, msg, ownerJid) {
         }
         await sock.sendMessage(sender, { text: `*NICKNAME* 😎\n@${target.slice(1)} is now *${nickname}*!` });
     }
-    // Reminder
     else if (command === 'reminder' && params) {
         const match = params.match(/(.+?)\s+in\s+(\d+)\s+minutes*/i);
         if (!match) {
@@ -379,33 +577,40 @@ async function handleCommand(sock, msg, ownerJid) {
         }, parseInt(minutes) * 60 * 1000);
         await sock.sendMessage(sender, { text: `*REMINDER SET* ⏳\nI’ll ping you in ${minutes} minutes!` });
     }
-    // Translate
-    else if (command === 'translate' && params) {
-        const match = params.match(/(.+?)\s+to\s+(\w+)/i);
-        if (!match) {
-            await sock.sendMessage(sender, { text: `*OOPS* ❌ Use *${commandPrefix}TRANSLATE text to lang*` });
-            return;
+    else if (command === 'translate') {
+        const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        if (quotedMsg && params) {
+            const match = params.match(/\s+to\s+(\w+)/i);
+            if (match) {
+                const toLang = match[1];
+                let textToTranslate = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || '';
+                const translated = await translateText(textToTranslate, toLang);
+                await sock.sendMessage(sender, { text: `*TRANSLATE* 🌐\nTranslated to ${toLang}: ${translated}` });
+                return;
+            }
+        } else if (params) {
+            const match = params.match(/(.+?)\s+to\s+(\w+)/i);
+            if (match) {
+                const [, textToTranslate, toLang] = match;
+                const translated = await translateText(textToTranslate, toLang);
+                await sock.sendMessage(sender, { text: `*TRANSLATE* 🌐\nTranslated to ${toLang}: ${translated}` });
+                return;
+            }
         }
-        const [, textToTranslate, lang] = match;
-        const translated = translateText(textToTranslate, lang);
-        await sock.sendMessage(sender, { text: `*TRANSLATE* 🌐\n${translated}` });
+        await sock.sendMessage(sender, { text: `*OOPS* ❌ Use *.translate text to lang* or reply to a message with *.translate to lang*` });
     }
-    // Weather
     else if (command === 'weather' && params) {
         const weather = await getWeather(params);
         await sock.sendMessage(sender, { text: `*WEATHER* 🌞\n${weather}` });
     }
-    // QR Code
     else if (command === 'qr' && params) {
         const qr = generateQR(params);
         await sock.sendMessage(sender, { text: `*QR CODE* 📷\n${qr}` });
     }
-    // Shorten URL
     else if (command === 'shorten' && params) {
         const shortUrl = await shortenURL(params);
         await sock.sendMessage(sender, { text: `*SHORTEN* 🔗\n${shortUrl}` });
     }
-    // Group Info
     else if (command === 'groupinfo' && msg.key.remoteJid.endsWith('@g.us')) {
         try {
             const groupMetadata = await sock.groupMetadata(msg.key.remoteJid);
@@ -416,72 +621,61 @@ async function handleCommand(sock, msg, ownerJid) {
             await sock.sendMessage(sender, { text: `*ERROR* ❌ Failed to get group info.` });
         }
     }
-    // Kick
-    else if (command === 'kick' && params && msg.key.remoteJid.endsWith('@g.us')) {
-        if (!params.startsWith('@')) {
-            await sock.sendMessage(sender, { text: `*OOPS* ❌ Use *${commandPrefix}KICK @user*` });
-            return;
-        }
-        try {
-            const target = params.slice(1) + '@s.whatsapp.net';
-            await sock.groupParticipantsUpdate(msg.key.remoteJid, [target], 'remove');
-            await sock.sendMessage(sender, { text: `*KICK* 👟\n@${params.slice(1)} kicked!` });
-        } catch (error) {
-            console.error('Error kicking user:', error);
-            await sock.sendMessage(sender, { text: `*ERROR* ❌ Failed to kick user. Am I admin?` });
-        }
+    else if (['kick', 'promote', 'demote'].includes(command) && msg.key.remoteJid.endsWith('@g.us')) {
+        console.log(`Executing ${command} command in ${msg.key.remoteJid}`);
+        await handleAdminCommands(sock, msg, command);
     }
-    // Promote
-    else if (command === 'promote' && params && msg.key.remoteJid.endsWith('@g.us')) {
-        if (!params.startsWith('@')) {
-            await sock.sendMessage(sender, { text: `*OOPS* ❌ Use *${commandPrefix}PROMOTE @user*` });
-            return;
-        }
-        try {
-            const target = params.slice(1) + '@s.whatsapp.net';
-            await sock.groupParticipantsUpdate(msg.key.remoteJid, [target], 'promote');
-            await sock.sendMessage(sender, { text: `*PROMOTE* 🌟\n@${params.slice(1)} promoted to admin!` });
-        } catch (error) {
-            console.error('Error promoting user:', error);
-            await sock.sendMessage(sender, { text: `*ERROR* ❌ Failed to promote user. Am I admin?` });
-        }
-    }
-    // Tag All
     else if (command === 'tagall' && msg.key.remoteJid.endsWith('@g.us')) {
+        if (currentSettings.mode === 'private' && !isOwner) {
+            await sock.sendMessage(sender, { text: '❌ Only the owner can use this command.' }, { quoted: msg });
+            return;
+        }
         try {
             const groupMetadata = await sock.groupMetadata(msg.key.remoteJid);
             const participants = groupMetadata.participants.map(p => p.id);
             const mentionsText = participants.map(id => `@${id.split('@')[0]}`).join(' ');
-            await sock.sendMessage(msg.key.remoteJid, {
-                text: `*GROUP TAG* 📢\n${mentionsText}`,
-                mentions: participants
-            });
+            await sock.sendMessage(msg.key.remoteJid, { text: `*GROUP TAG* 📢\n${mentionsText}`, mentions: participants });
             console.log(`Tagged all in group ${msg.key.remoteJid}`);
         } catch (error) {
             console.error('Error tagging group members:', error);
             await sock.sendMessage(sender, { text: `*ERROR* ❌ Failed to tag group members.` });
         }
     }
+    else if (command === 'ytmp3' && params) {
+        await handleDownloadCommand(sock, msg, 'youtube', 'mp3');
+    }
+    else if (command === 'ytmp4' && params) {
+        await handleDownloadCommand(sock, msg, 'youtube', 'mp4');
+    }
+    else if (command === 'insta' && params) {
+        await handleDownloadCommand(sock, msg, 'instagram', 'mp4');
+    }
+    else if (command === 'xdl' && params) {
+        await handleDownloadCommand(sock, msg, 'x', 'mp4');
+    }
+    else if (command === 'tiktok' && params) {
+        await handleDownloadCommand(sock, msg, 'tiktok', 'mp4');
+    }
+    else {
+        await sock.sendMessage(sender, { text: `*OOPS* ❌ Unknown command! Type *.menu* to see available commands.` });
+    }
 }
 
-// === BOT LOGIC ===
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+    const { state, saveCreds } = await useMultiFileAuthState(authFile);
     const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
         auth: state,
         version,
         printQRInTerminal: false,
-        getMessage: async (key) => {
-            return { conversation: "Fallback message" };
-        }
+        getMessage: async (key) => { return { conversation: "Fallback message" }; }
     });
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
         if (qr) {
-            console.log(`Scan this QR code with your WhatsApp app (Settings > Linked Devices > Link a Device):`);
+            console.log(`Scan this QR code with your WhatsApp app (Settings > Linked Devices > Link a Device) using number 249469333442651:`);
             qrcode.generate(qr, { small: true });
         }
         if (connection === 'close') {
@@ -490,13 +684,16 @@ async function startBot() {
                 console.log('Connection closed, reconnecting...');
                 startBot();
             } else {
-                console.log('Connection closed. You are logged out. Delete "auth_info" folder and restart.');
+                console.log('Connection closed. You are logged out. Delete "auth_file" folder and restart.');
             }
         } else if (connection === 'open') {
+            if (!ownerJid && sock.user && sock.user.id) {
+                ownerJid = sock.user.id;
+                console.log(`Dynamically set Owner JID: ${ownerJid}`);
+            }
             console.log(`✅ ${botName} is connected to WhatsApp!`);
             console.log(`Owner: ${ownerJid}`);
             try {
-                // Send welcome image and menu
                 if (fs.existsSync(welcomeImagePath)) {
                     const imageBuffer = fs.readFileSync(welcomeImagePath);
                     const menuText = `*HEY, ${botName.toUpperCase()} IS LIVE!* 😎\n\n` +
@@ -528,29 +725,36 @@ async function startBot() {
                                     `🔧 *${commandPrefix}NICKNAME @user <name>*: Rename fun\n` +
                                     `🔧 *${commandPrefix}REMINDER <msg> in <time> minutes*: Set alert\n` +
                                     `🔧 *${commandPrefix}TRANSLATE <text> to <lang>*: Language swap\n` +
+                                    `🔧 *${commandPrefix}TRANSLATE*: Reply to a message to translate\n` +
                                     `🔧 *${commandPrefix}WEATHER <city>*: Weather check\n` +
                                     `🔧 *${commandPrefix}QR <text>*: QR creation\n` +
                                     `🔧 *${commandPrefix}SHORTEN <url>*: Link trim\n\n` +
                                     `*👥 GROUP TOOLS*\n` +
                                     `🤝 *${commandPrefix}GROUPINFO*: Group stats\n` +
-                                    `🤝 *${commandPrefix}KICK @user*: Boot out\n` +
-                                    `🤝 *${commandPrefix}PROMOTE @user*: Elevate role\n` +
+                                    `🤝 *${commandPrefix}KICK*: Boot out (tag user)\n` +
+                                    `🤝 *${commandPrefix}PROMOTE*: Elevate role (tag user)\n` +
+                                    `🤝 *${commandPrefix}DEMOTE*: Remove admin role (tag user)\n` +
                                     `🤝 *${commandPrefix}TAGALL*: Call everyone\n\n` +
+                                    `*📥 DOWNLOAD*\n` +
+                                    `⬇️ *${commandPrefix}YTMP3 <YouTube URL>*: Grab YouTube audio\n` +
+                                    `⬇️ *${commandPrefix}YTMP4 <YouTube URL>*: Grab YouTube video\n` +
+                                    `⬇️ *${commandPrefix}INSTA <Instagram URL>*: Save Instagram video\n` +
+                                    `⬇️ *${commandPrefix}XDL <X URL>*: Download X video\n` +
+                                    `⬇️ *${commandPrefix}TIKTOK <TikTok URL>*: Download TikTok video\n\n` +
                                     `*⚙️ STATUS*\n` +
                                     `- *AUTO-VIEW*: ${settings.autoViewStatus ? '✅ ON' : '❌ OFF'}\n` +
-                                    `- *PRIVACY*: ${settings.privacyMode.toUpperCase() === 'PRIVATE' ? '🔒 PRIVATE' : '🌍 PUBLIC'}\n\n` +
+                                    `- *PRIVACY*: ${settings.mode.toUpperCase() === 'PRIVATE' ? '🔒 PRIVATE' : '🌍 PUBLIC'}\n\n` +
                                     `_Drop a *${commandPrefix}HELP* for more!_ 😄`;
-                    await sock.sendMessage(ownerJid, {
-                        image: imageBuffer,
-                        caption: menuText
-                    });
+                    await sock.sendMessage(ownerJid, { image: imageBuffer, caption: menuText });
                     console.log(`Sent welcome image and menu to ${ownerJid}`);
                 } else {
-                    console.error('Welcome image not found at:', welcomeImagePath);
-                    await sock.sendMessage(ownerJid, { text: `*HEY, ${botName.toUpperCase()} IS LIVE!* 😎\n\nImage not found. Check menu with *.MENU*` });
+                    console.warn('Welcome image not found at:', welcomeImagePath);
+                    await sock.sendMessage(ownerJid, { text: menuText });
+                    console.log(`Sent welcome text to ${ownerJid} (no image)`);
                 }
             } catch (error) {
                 console.error('Error sending welcome message:', error);
+                await sock.sendMessage(ownerJid, { text: `*ERROR* ❌ Failed to send welcome. ${menuText}` });
             }
         }
     });
@@ -564,20 +768,14 @@ async function startBot() {
                 console.log(`New status from ${msg.key.participant}`);
                 try {
                     await sock.readMessages([msg.key]);
-                    // Automatically like the status using the new WhatsApp reaction feature
-                    await sock.sendMessage(msg.key.remoteJid, {
-                        react: {
-                            key: msg.key,
-                            text: '❤️' // WhatsApp's like reaction
-                        }
-                    });
+                    await sock.sendMessage(msg.key.remoteJid, { react: { key: msg.key, text: '❤️' } });
                     console.log(`Liked status from ${msg.key.participant}`);
                 } catch (error) {
                     console.error('Error viewing or liking status:', error);
                 }
             }
             if (msg.message?.conversation || msg.message?.extendedTextMessage?.text) {
-                await handleCommand(sock, msg, ownerJid);
+                await handleCommand(sock, msg);
             }
         }
     });
@@ -585,7 +783,6 @@ async function startBot() {
     return sock;
 }
 
-// === START BOT ===
 startBot().catch(error => {
     console.error(`Failed to start ${botName}:`, error);
 });
