@@ -6,10 +6,10 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^latest",
-    "pino": "^latest",
-    "qrcode-terminal": "^latest",
+    "@whiskeysockets/baileys": "6.7.18",
+    "axios": "^1.9.0",
     "fs": "^0.0.1-security",
-    "axios": "^latest"
+    "pino": "^8.16.2",
+    "qrcode-terminal": "^0.12.0"
   }
 }
